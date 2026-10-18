@@ -7,14 +7,16 @@ from __future__ import annotations
     
 import argparse
 import csv
+import io
 import os
 import time
 from collections import Counter
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 
 from dotenv import load_dotenv
+from url_policy import normalize_url, project_row, redact
+from integration_store import ExportBundle, writer_lock
 
 SEARCH_QUERIES = {
     "France": [
@@ -52,16 +54,7 @@ FIELDS = [
 
 def canonical_url(value: str) -> str:
     """Normaliza URL solamente para deduplicación; no verifica el sitio."""
-    try:
-        p = urlsplit(value.strip())
-        host = (p.hostname or "").lower().removeprefix("www.")
-        if p.scheme not in ("http", "https") or not host:
-            return ""
-        path = p.path.rstrip("/") or "/"
-        # Eliminar tracking de consulta y fragmentos. No altera URLs de salida.
-        return urlunsplit(("https", host, path, "", ""))
-    except ValueError:
-        return ""
+    return normalize_url(value)
 
 
 def demo_search(query: str, country: str, limit: int) -> list[dict[str, str]]:
@@ -92,17 +85,22 @@ def collect(client, *, demo: bool, queries_per_country: int, results_per_query: 
                         include_images=False,
                     )
                     items = response.get("results", [])
+                    if not isinstance(items, list):
+                        raise ValueError("Invalid search results container")
             except Exception as exc:
-                msg = f"{country}: {type(exc).__name__}: {exc}"
+                msg = redact(f"{country}: {type(exc).__name__}: {exc}")
                 errors.append(msg)
                 print(f"  ERROR: {msg}")
                 continue
 
             added = 0
             for item in items:
+                if not isinstance(item, dict):
+                    errors.append(f"{country}: invalid search result item")
+                    continue
                 original_url = str(item.get("url", "")).strip()
-                key = canonical_url(original_url)
-                if not key or key in seen:
+                key = (country, query, canonical_url(original_url))
+                if not key[2] or key in seen:
                     continue
                 seen.add(key)
                 added += 1
@@ -112,7 +110,7 @@ def collect(client, *, demo: bool, queries_per_country: int, results_per_query: 
                     "Source Language": LANGUAGE[country],
                     "Search Query": query,
                     "Search Result URL": original_url,
-                    "Result Title": str(item.get("title", "")),
+                    "Result Title": redact(str(item.get("title", ""))),
                     "Company Name (manual)": "",
                     "Official Website (manual)": "",
                     "Product Category (manual)": "",
@@ -131,17 +129,18 @@ def collect(client, *, demo: bool, queries_per_country: int, results_per_query: 
 def save(records, errors, outdir: Path, demo: bool):
     outdir.mkdir(parents=True, exist_ok=True)
     target = outdir / ("candidates_DEMO.csv" if demo else "candidates.csv")
-    with target.open("w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDS)
-        writer.writeheader()
-        writer.writerows(records)
+    stream = io.StringIO(newline="")
+    writer = csv.DictWriter(stream, fieldnames=FIELDS)
+    writer.writeheader()
+    writer.writerows(project_row(row) for row in records)
 
     by_country = Counter(row["Country"] for row in records)
     report = [
         "RESUMEN DE DESCUBRIMIENTO - NO ES UNA LISTA VERIFICADA",
         f"Fecha: {date.today().isoformat()}",
         f"Modo: {'DEMO / DATOS FICTICIOS' if demo else 'API REAL'}",
-        f"URLs candidatas únicas: {len(records)}",
+        f"Observaciones candidatas: {len(records)}",
+        f"URLs candidatas únicas: {len({canonical_url(r['Search Result URL']) for r in records})}",
     ]
     report += [f"{country}: {by_country[country]}" for country in SEARCH_QUERIES]
     report += [f"Errores: {len(errors)}"]
@@ -153,7 +152,10 @@ def save(records, errors, outdir: Path, demo: bool):
         "No afirmes cobertura completa del sector ni obtención de 30 empresas verificadas.",
     ]
     summary = outdir / ("summary_DEMO.txt" if demo else "summary.txt")
-    summary.write_text("\n".join(report) + "\n", encoding="utf-8")
+    with writer_lock(outdir):
+        ExportBundle(outdir, 'discovery-demo' if demo else 'discovery').commit({
+            target.name: stream.getvalue().encode('utf-8-sig'),
+            summary.name: redact("\n".join(report) + "\n").encode('utf-8')})
     return target, summary
 
 
@@ -185,6 +187,13 @@ def main():
     print(f"Candidatos (sin verificar): {len(records)}")
     if not records:
         print("No se obtuvieron candidatos. Revisa errores en el resumen y prueba una consulta alternativa.")
+    from candidate_integration import integrate
+    integration_out = Path("output/integration_v2_2_DEMO" if args.demo else "output/integration_v2_2")
+    try:
+        merged, report = integrate(target, Path("input/candidate_review.csv"), integration_out, demo=args.demo)
+    except (ValueError, OSError, UnicodeError) as exc:
+        raise SystemExit(f"Descubrimiento guardado; integración pendiente: {redact(str(exc))}") from exc
+    print(f"Cola integrada (sin auditoría web): {merged}; {report['counts']}")
 
 
 if __name__ == "__main__":

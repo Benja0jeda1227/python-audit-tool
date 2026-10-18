@@ -1,0 +1,4 @@
+﻿Candidate ID,Country,Source Language,Search Query,Search Result URL,Result Title,Company Name (manual),Official Website (manual),Product Category (manual),Evidence URL (manual),Public Contact Page (manual),Verification Status,Reviewed On,Research Notes
+C-001,France,French,fabricants de produits laitiers France site officiel entreprise,https://example.com/demo-france-1,DEMO France candidate 1,,,,,,DEMO - NOT REAL,,FICTIONAL DEMO: documentation sample; not verified business evidence.
+C-002,United States,English,US dairy food manufacturers official company website,https://example.com/demo-united-states-1,DEMO United States candidate 1,,,,,,DEMO - NOT REAL,,FICTIONAL DEMO: documentation sample; not verified business evidence.
+C-003,Chile,Spanish,fabricantes productos lácteos Chile sitio oficial empresa,https://example.com/demo-chile-1,DEMO Chile candidate 1,,,,,,DEMO - NOT REAL,,FICTIONAL DEMO: documentation sample; not verified business evidence.

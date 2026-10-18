@@ -14,7 +14,8 @@ import csv
 from collections import Counter
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
+from url_policy import normalize_url, public_url
 
 LABELS = {"Manufacturer candidate", "Needs further review", "Discovery source"}
 NEW_FIELDS = ["Auto Hint", "Initial Category", "Reason (preliminary)", "Next Verification Step"]
@@ -22,19 +23,12 @@ NEW_FIELDS = ["Auto Hint", "Initial Category", "Reason (preliminary)", "Next Ver
 
 def canonical_url(value: str) -> str:
     """Normalización para comparar enlaces de la misma página (no identifica empresas)."""
-    try:
-        parts = urlsplit(value.strip())
-        host = (parts.hostname or "").lower().removeprefix("www.")
-        if parts.scheme not in ("http", "https") or not host:
-            return ""
-        path = parts.path.rstrip("/") or "/"
-        return urlunsplit(("https", host, path, "", ""))
-    except ValueError:
-        return ""
+    return normalize_url(value)
 
 
 def automatic_hint(url: str, title: str) -> str:
     """Pista basada en texto/URL; nunca equivale a validación factual."""
+    if not public_url(url): return "Invalid or unsafe URL — inspect input"
     host = (urlsplit(url).hostname or "").lower().removeprefix("www.")
     content = (title + " " + url).lower()
     if any(host.endswith(domain) for domain in
@@ -77,7 +71,7 @@ def main() -> None:
 
     source = read_rows(args.input)
     annotations = read_rows(args.notes)
-    annotation_map = {canonical_url(r["Search Result URL"]): r for r in annotations}
+    annotation_map = {canonical_url(r["Search Result URL"]): r for r in annotations if canonical_url(r["Search Result URL"])}
 
     combined = []
     for original in source:

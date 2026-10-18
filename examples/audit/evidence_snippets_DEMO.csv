@@ -1,0 +1,3 @@
+﻿Candidate ID,Company,Source Role,Source URL,Evidence Type,Rule ID,Strength,Exact Text Excerpt
+TEST-001,Andes Fictional Dairy,Homepage,https://demo.invalid/manufacturer,OWN_MANUFACTURING_CLAIM,EN_WE_MAKE,First-party company claim,We operate dairy manufacturing plants in Chile.
+TEST-001,Andes Fictional Dairy,Homepage,https://demo.invalid/manufacturer,MANUFACTURING_SITE_MENTION,EN_DAIRY_PLANT,"Plant mention, ownership unproven",We operate dairy manufacturing plants in Chile.

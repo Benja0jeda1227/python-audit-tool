@@ -1,0 +1,4 @@
+Candidate ID,Country,Search Result URL,Verification Status,Result Title,Company Name (manual),Official Website (manual),Evidence URL (manual)
+C-001,Chile,https://www.dairy.example/?utm_source=test,Needs review,Search title must not become company,,,
+C-001,France,https://directory.example/list?id=2,Needs review,Directory,,,
+C-003,Chile,https://dairy.example/#contact,Needs review,Repeated,,,

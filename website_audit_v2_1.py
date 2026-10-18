@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import argparse
 import csv
-import ipaddress
+import http.client
 import re
-import ssl
 import sys
+import tempfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,7 +21,11 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from safe_http import urlopen
+from url_policy import normalize_url
+from url_policy import redact, safe_cell as safe_csv_cell
+from integration_store import ExportBundle, writer_lock
 
 import website_audit as base
 
@@ -210,7 +214,8 @@ class CleanPublicFetcher(base.PublicFetcher):
         self.pause(p.netloc)
         req=Request(url,headers={"User-Agent":base.AGENT,"Accept":"text/html,application/xhtml+xml;q=0.9,*/*;q=0.1"})
         try:
-            with urlopen(req,timeout=self.timeout,context=self.context) as resp:
+            with urlopen(req,timeout=self.timeout,context=self.context,
+                         redirect_policy=lambda url: self.robots_permission(url)[0]) as resp:
                 code=str(resp.getcode())
                 kind=resp.headers.get("Content-Type","").lower()
                 final=public_url(resp.geturl())
@@ -225,33 +230,26 @@ class CleanPublicFetcher(base.PublicFetcher):
                     else:
                         charset=resp.headers.get_content_charset() or "utf-8"
                         content,title=html_to_content(data.decode(charset,errors="replace"))
-                        result=base.FetchResult(url,"ok" if content else "empty_page",code,title,content)
+                        result=base.FetchResult(final,"ok" if content else "empty_page",code,title,content)
         except HTTPError as ex:
             result=base.FetchResult(url,f"http_{ex.code}",str(ex.code),detail="HTTP error; manual browser may still work")
         except (URLError,OSError,TimeoutError) as ex:
             result=base.FetchResult(url,"network_error",detail=type(ex).__name__)
         except LookupError:
             result=base.FetchResult(url,"encoding_error")
+        except (http.client.HTTPException, ValueError):
+            result=base.FetchResult(url,"invalid_response")
         self.cache[url]=result;return result
 
 
 def public_url(raw:str)->str:
-    url=base.clean_url(raw)
-    if not url: return ""
-    parsed=urlparse(url)
-    if parsed.username or parsed.password:return ""
-    hostname=(parsed.hostname or "").strip(".").casefold()
-    if not hostname or hostname=="localhost" or hostname.endswith((".local",".internal",".localhost")):return ""
-    try:
-        ip=ipaddress.ip_address(hostname)
-    except ValueError:
-        return url
-    return url if ip.is_global else ""
+    return base.clean_url(raw)
 
 
 def first_party(official:str,source:str)->bool:
-    a=(urlparse(official).hostname or "").casefold().removeprefix("www.")
-    b=(urlparse(source).hostname or "").casefold().removeprefix("www.")
+    if not public_url(official) or not public_url(source):return False
+    a=(urlparse(normalize_url(official)).hostname or "")
+    b=(urlparse(normalize_url(source)).hostname or "")
     return bool(a and b and (a==b or b.endswith("."+a)))
 
 
@@ -261,8 +259,9 @@ def sources_for(row:dict,max_pages:int)->list[tuple[str,str]]:
     found=[];seen=set()
     for label,key in slots:
         url=public_url(row.get(key,""))
-        if url and url not in seen:
-            found.append((label,url));seen.add(url)
+        key=normalize_url(url)
+        if key and key not in seen:
+            found.append((label,url));seen.add(key)
         if len(found)>=max_pages:break
     return found
 
@@ -370,10 +369,10 @@ def audit(rows:list[dict],fetcher,max_pages:int=4):
         current=[];page_rows=[]
         for role,url in selected:
             info=fetcher.fetch(url)
-            first=first_party(official,url)
-            extracted=extract_evidence(cid,company,role,url,info.text,country,first) if info.status=="ok" else []
+            first=first_party(official,info.url)
+            extracted=extract_evidence(cid,company,role,info.url,info.text,country,first) if info.status=="ok" else []
             current.extend(extracted)
-            entry={"Candidate ID":cid,"Company":company,"Source Role":role,"URL":url,
+            entry={"Candidate ID":cid,"Company":company,"Source Role":role,"URL":url,"Final URL":info.url,
                    "Fetch Status":info.status,"HTTP Code":info.http_code,"Page Title":info.title,
                    "First Party Domain": "Yes" if first else "No; verify attribution",
                    "Evidence Count":str(len(extracted)),"Fetch Detail":info.detail}
@@ -461,9 +460,7 @@ def audit(rows:list[dict],fetcher,max_pages:int=4):
 
 
 def safe_cell(value)->str:
-    val=str(value if value is not None else "")
-    # Prevent spreadsheet formula injection on arbitrary fetched content.
-    return "'"+val if val.lstrip().startswith(("=","+","-","@","\t","\r")) else val
+    return safe_csv_cell(redact(str(value if value is not None else "")))
 
 
 def write_csv(path:Path,headers:list[str],rows:list[dict]):
@@ -472,10 +469,10 @@ def write_csv(path:Path,headers:list[str],rows:list[dict]):
         for r in rows:w.writerow({k:safe_cell(r.get(k,"")) for k in headers})
 
 
-def write_outputs(folder:Path, results:list[dict], pages:list[dict], evidences:list[Evidence], alerts:list[Alert], mode="live"):
+def _write_outputs(folder:Path, results:list[dict], pages:list[dict], evidences:list[Evidence], alerts:list[Alert], mode="live"):
     folder.mkdir(parents=True,exist_ok=True)
     write_csv(folder/"audit_results.csv",list(results[0]) if results else ["Candidate ID","Company"],results)
-    write_csv(folder/"page_checks.csv",["Candidate ID","Company","Source Role","URL","Fetch Status","HTTP Code","Page Title","First Party Domain","Evidence Count","Fetch Detail"],pages)
+    write_csv(folder/"page_checks.csv",["Candidate ID","Company","Source Role","URL","Final URL","Fetch Status","HTTP Code","Page Title","First Party Domain","Evidence Count","Fetch Detail"],pages)
     write_csv(folder/"evidence_snippets.csv",["Candidate ID","Company","Source Role","Source URL","Evidence Type","Rule ID","Strength","Exact Text Excerpt"],[e.row() for e in evidences])
     write_csv(folder/"alerts_detailed.csv",["Candidate ID","Company","Alert Code","Priority","Reason","Source URL","Recommended Action"],[a.row() for a in alerts])
     byid=defaultdict(list)
@@ -523,8 +520,19 @@ def write_outputs(folder:Path, results:list[dict], pages:list[dict], evidences:l
        "- page_checks.csv: URL/fetch status", "- evidence_snippets.csv: short evidence excerpts",
        "- alerts_detailed.csv: one row per alert","- manual_followups.csv: one row per flagged candidate",
        "- quality_comparison.csv: machine/manual side-by-side, not accuracy statistics", ""]
-    (folder/"audit_summary.md").write_text("\n".join(lines),encoding="utf-8")
+    (folder/"audit_summary.md").write_text(redact("\n".join(lines)),encoding="utf-8")
     return len(followups)
+
+
+def write_outputs(folder:Path, results:list[dict], pages:list[dict], evidences:list[Evidence], alerts:list[Alert], mode="live"):
+    with writer_lock(folder):
+        bundle=ExportBundle(folder,'audit')
+        bundle.recover()
+        with tempfile.TemporaryDirectory(prefix='audit-export-') as staging:
+            staged=Path(staging)
+            flagged=_write_outputs(staged,results,pages,evidences,alerts,mode)
+            bundle.commit({p.name:p.read_bytes() for p in staged.iterdir() if p.is_file()})
+    return flagged
 
 
 class DemoFetcher:

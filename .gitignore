@@ -1,14 +1,24 @@
 
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.hypothesis/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
 
 # Virtual environments
 .venv/
 venv/
 env/
+.venv-*/
 
 # Secrets
 .env
@@ -16,14 +26,57 @@ env/
 !.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.keystore
+.envrc
+.direnv/
+.pypirc
+.netrc
+_netrc
+credentials.json
 
 # IDE and operating system
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+*.code-workspace
+/.codex/
 
 # Generated files
 build/
 dist/
 *.egg-info/
+.eggs/
+
+# Internal reports and unfinished portfolio drafts; public guides stay at root
+/docs/
+/PORTFOLIO_TEMPLATE.md
+
+# Logs, editor artifacts, and private recovery copies
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.old
+*.swp
+*.swo
+*~
+~$*
+*.bundle
+/backup/
+/backups/
+/private_history_backups/
+
+# Local canonical state, manual provenance, and discovery backups
+/input/
+/output/
+/review_notes.csv
+/reviewed_identity_map.json
+.integration/
+.integration.lock
+.integration-*.tmp
+.research_history/
+.exports/

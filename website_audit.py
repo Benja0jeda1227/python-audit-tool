@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import http.client
 import re
 import ssl
 import sys
@@ -19,7 +20,9 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse, urljoin, urldefrag
-from urllib.request import Request, urlopen
+from urllib.request import Request
+from safe_http import urlopen
+from url_policy import public_url as validated_public_url
 from urllib.robotparser import RobotFileParser
 
 AGENT = "MultilingualResearchAudit/1.0 (public business research; respects robots.txt)"
@@ -124,12 +127,8 @@ def matches(text: str, dictionary: dict[str, str]) -> list[str]:
 
 
 def clean_url(url: str) -> str:
-    url = (url or "").strip()
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        return ""  # Ignore unsafe, relative, or malformed URLs.
+    url = validated_public_url(url or "")
+    if not url: return ""
     return urldefrag(url)[0]
 
 
@@ -167,7 +166,14 @@ class PublicFetcher:
             try:
                 request = Request(robots_url, headers={"User-Agent": AGENT, "Accept": "text/plain"})
                 with urlopen(request, timeout=self.timeout, context=self.context) as response:
-                    content = response.read(150_000).decode("utf-8", errors="replace")
+                    chunk = response.read(150_001)
+                    if len(chunk) > 150_000:
+                        self.robots[root] = (None, "robots_too_large")
+                        return False, "robots_too_large"
+                    content = chunk.decode("utf-8", errors="replace")
+                    if content.lstrip().startswith("<"):
+                        self.robots[root] = (None, "robots_invalid_response")
+                        return False, "robots_invalid_response"
                 parser = RobotFileParser()
                 parser.set_url(robots_url)
                 parser.parse(content.splitlines())
@@ -175,7 +181,7 @@ class PublicFetcher:
             except HTTPError as exc:
                 # A missing robots.txt imposes no robots.txt restriction. Other errors are unknown/deny.
                 self.robots[root] = (None, "no_robots_file") if exc.code in (404, 410) else (None, f"robots_http_{exc.code}")
-            except (URLError, OSError, TimeoutError) as exc:
+            except (URLError, OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
                 self.robots[root] = (None, "robots_fetch_error")
         parser, status = self.robots[root]
         if status == "no_robots_file":
@@ -226,6 +232,8 @@ class PublicFetcher:
             result = FetchResult(url, "network_error", detail=type(exc).__name__)
         except LookupError:
             result = FetchResult(url, "encoding_error")
+        except (http.client.HTTPException, ValueError):
+            result = FetchResult(url, "invalid_response")
         self.cache[url] = result
         return result
 
