@@ -114,7 +114,7 @@ This command uses fictional data and must retain `--demo`. Real integration need
 
 Review the integrated CSV or the manual input, preserving candidate IDs. Record the official site, products, manufacturing/location evidence, review date, and reasons for inclusion or exclusion. Keep unsupported candidates pending. Removing a row or column does not authorize deleting its historical information.
 
-Changes to different fields are reconciled. Conflicting changes to the same field retain both alternatives in the report; the pipeline exits with code `2` and postpones auditing. Set the intended value in both review copies to resolve a field conflict. Advanced reviewed identity mappings are available through `--identity-map`; see the operational notes below.
+Changes to different fields are reconciled. Conflicting changes to the same field retain both alternatives in `integration_report.json`. Both `research.py` and `pipeline_v2_2.py` warn and exit with code `2` when manual conflicts remain; discovery results stay saved, and the pipeline postpones auditing. Successful runs exit with code `0`. Set the intended value in both review copies to resolve a field conflict. Advanced reviewed identity mappings are available through `--identity-map`; see the operational notes below.
 
 ### 4. Audit supplied website sources
 
@@ -179,7 +179,7 @@ The first stabilized run migrates legacy v2.2 CSV/report outputs without renumbe
 .\.venv\Scripts\python.exe -B tests/run_offline.py
 ```
 
-Current local result: **107 tests passing** on Windows / Python 3.15.0. The runner blocks real sockets, DNS, and dotenv loading. Tests use fictional data, temporary directories, and mocked search/HTTP services.
+Current local result: **116 tests passing** on Windows / Python 3.15.0. The runner blocks real sockets, DNS, and dotenv loading. Tests use fictional data, temporary directories, and mocked search/HTTP services.
 
 Coverage includes identity migration, duplicate/ambiguous matches, manual conflicts, idempotence, URL safety, formula protection, redirects, write failures, corruption, recovery, and the complete discovery-to-audit workflow.
 
@@ -198,7 +198,7 @@ The public repository contains source code, requirements, automated tests and sy
 
 Previously tracked working datasets, exports, and internal drafts/reports have been removed from the proposed Git tree and excluded from local history references. Local working copies remain on disk, ignored by Git. Private recovery backups of the original Git state are stored outside the repository; never publish those backups.
 
-**Existing remote copies have not been changed.** Publishing this cleaned history to an existing remote requires a separately authorized, coordinated update of every affected branch. Fetching or pulling old branches can reintroduce the removed history. No push or new snapshot commit was made.
+The portfolio baseline has been published to [python-audit-tool](https://github.com/Benja0jeda1227/python-audit-tool) (`portfolio` remote). The former [Projects](https://github.com/Benja0jeda1227/Projects) remote is a separate repository: the local cleanup does not establish whether historical copies remain there, in forks, or in caches. Fetching or pulling older branches can reintroduce removed history; review them before bringing them into this repository.
 
 **Development approach.**
 This project was developed with extensive AI-assisted coding using OpenAI Codex. My contributions include defining project requirements, directing development iterations, testing outputs, reviewing results, and identifying areas for improvement. Much of the code implementation was generated with AI assistance.

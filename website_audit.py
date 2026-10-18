@@ -165,6 +165,7 @@ class PublicFetcher:
             self.pause(p.netloc)
             try:
                 request = Request(robots_url, headers={"User-Agent": AGENT, "Accept": "text/plain"})
+                # Applying the content robots policy here would recurse into robots.txt retrieval.
                 with urlopen(request, timeout=self.timeout, context=self.context) as response:
                     chunk = response.read(150_001)
                     if len(chunk) > 150_000:
@@ -209,7 +210,8 @@ class PublicFetcher:
         self.pause(parsed.netloc)
         req = Request(url, headers={"User-Agent": AGENT, "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1"})
         try:
-            with urlopen(req, timeout=self.timeout, context=self.context) as resp:
+            with urlopen(req, timeout=self.timeout, context=self.context,
+                         redirect_policy=lambda target: self.robots_permission(target)[0]) as resp:
                 code = resp.getcode()
                 kind = resp.headers.get("Content-Type", "").lower()
                 final_url = resp.geturl()

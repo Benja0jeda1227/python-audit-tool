@@ -194,7 +194,11 @@ def main():
     except (ValueError, OSError, UnicodeError) as exc:
         raise SystemExit(f"Descubrimiento guardado; integración pendiente: {redact(str(exc))}") from exc
     print(f"Cola integrada (sin auditoría web): {merged}; {report['counts']}")
+    if report['conflicts']:
+        print(f"ADVERTENCIA: hay conflictos manuales pendientes; consulta {integration_out / 'integration_report.json'}.")
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
