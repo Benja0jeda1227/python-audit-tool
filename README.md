@@ -6,6 +6,38 @@ The current search configuration targets dairy manufacturers in **France, the Un
 
 Search results are leads, not verified companies. Manufacturing, location, eligibility, and group relationships remain research decisions supported by documented sources.
 
+## Demo
+
+Follow three fictional discovery records into the integrated review queue. These are **demo visualizations of actual CSV data and offline command output**, not application screenshots. All data comes from [examples/](examples/README.md); no credentials, live searches, website requests, or provider credits are needed. Automated findings require human review and are not verified business evidence.
+
+**Input.** Selected columns from all three rows of the [fictional discovery CSV](examples/discovery/candidates_DEMO.csv), one observation per configured country.
+
+![Fictional discovery CSV: C-001 France/French, C-002 United States/English, and C-003 Chile/Spanish; all marked DEMO - NOT REAL.](assets/demo/01-input.png)
+
+**Run.** Integrate those records with the matching fictional review CSV. The visualization shows the command and its actual stdout, wrapped for readability: three existing candidates matched, with no new, ambiguous, or rejected records.
+
+![Offline integration command and actual output: new 0, existing 3, ambiguous 0, rejected 0.](assets/demo/02-run.png)
+
+To reproduce safely in Windows PowerShell, start at the project root after installation. This copies only the required source files and public examples into a fresh temporary directory; generated results stay there, preserving existing local outputs.
+
+```powershell
+$python = (Resolve-Path .venv/Scripts/python.exe).Path
+$demo = Join-Path ([IO.Path]::GetTempPath()) ('research-demo-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $demo | Out-Null
+'pipeline_v2_2.py','candidate_integration.py','integration_store.py','url_policy.py' | ForEach-Object { Copy-Item -LiteralPath $_ -Destination $demo }
+Copy-Item -LiteralPath examples -Destination $demo -Recurse
+Push-Location $demo
+try {
+    & $python -B pipeline_v2_2.py --demo --input examples/discovery/candidates_DEMO.csv --review examples/review/candidate_review_DEMO.csv --out demo-output
+} finally {
+    Pop-Location
+}
+```
+
+**Result.** Selected columns from the generated `demo-output/candidate_review.csv`. All three candidates remain `Needs review`, with empty official website fields; discovery URLs do not establish official websites. Repeating the command in the same temporary directory preserves the three supplied IDs without adding candidates. The full CSV and `integration_report.json` remain available under `$demo/demo-output` for inspection.
+
+![Generated review queue: France, United States, and Chile all remain Needs review; official website cells are empty.](assets/demo/03-result.png)
+
 ## Features
 
 - Tavily discovery with configurable query/result limits and a fictional offline demo.
